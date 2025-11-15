@@ -1,0 +1,172 @@
+# Workflow Validation Test
+# This workflow tests that the CI/CD pipeline works correctly across all branches
+# Use this to validate your pipeline setup before deploying to production
+
+name: Validate CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, staging, development ]
+  pull_request:
+    branches: [ main, staging, development ]
+  workflow_dispatch:
+
+jobs:
+  # Test that the workflow runs on correct branches
+  branch-validation:
+    name: Branch Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate branch configuration
+        run: |
+          echo "Current branch: ${{ github.ref }}"
+          echo "Event type: ${{ github.event_name }}"
+          
+          # Validate branch is one of the expected branches
+          if [[ "${{ github.ref }}" =~ ^refs/heads/(main|staging|development)$ ]]; then
+            echo "✅ Running on valid branch: ${{ github.ref }}"
+          else
+            echo "❌ Unexpected branch: ${{ github.ref }}"
+            exit 1
+          fi
+
+  # Simulate quality gates
+  quality-check:
+    name: Quality Gates Simulation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Simulate linting
+        run: |
+          echo "✅ Running linting checks..."
+          echo "✅ Linting passed"
+
+      - name: Simulate testing
+        run: |
+          echo "✅ Running tests..."
+          echo "✅ Tests passed"
+
+      - name: Simulate build
+        run: |
+          echo "✅ Running build..."
+          echo "✅ Build successful"
+
+  # Test staging deployment conditions
+  staging-deployment-test:
+    name: Staging Deployment Test
+    runs-on: ubuntu-latest
+    needs: [branch-validation, quality-check]
+    if: github.ref == 'refs/heads/development' || github.ref == 'refs/heads/staging'
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate staging deployment
+        run: |
+          echo "🚀 This job should only run on development or staging branches"
+          echo "Current branch: ${{ github.ref }}"
+          
+          if [[ "${{ github.ref }}" == "refs/heads/development" ]] || [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            echo "✅ Correctly deploying to staging environment"
+          else
+            echo "❌ This job should not run on: ${{ github.ref }}"
+            exit 1
+          fi
+
+  # Test production deployment conditions
+  production-deployment-test:
+    name: Production Deployment Test
+    runs-on: ubuntu-latest
+    needs: [branch-validation, quality-check]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate production deployment
+        run: |
+          echo "🚀 This job should only run on main branch"
+          echo "Current branch: ${{ github.ref }}"
+          
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "✅ Correctly deploying to production environment"
+          else
+            echo "❌ This job should not run on: ${{ github.ref }}"
+            exit 1
+          fi
+
+  # Validate that wrong branches don't trigger deployments
+  deployment-isolation-test:
+    name: Deployment Isolation Test
+    runs-on: ubuntu-latest
+    needs: [branch-validation, quality-check]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check deployment isolation
+        run: |
+          echo "Validating deployment isolation..."
+          
+          # Check staging deployment ran correctly
+          if [[ "${{ github.ref }}" == "refs/heads/development" ]] || [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            if [[ "${{ needs.staging-deployment-test.result }}" == "success" ]]; then
+              echo "✅ Staging deployment ran as expected"
+            else
+              echo "❌ Staging deployment should have run"
+              exit 1
+            fi
+          fi
+          
+          # Check production deployment ran correctly
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            if [[ "${{ needs.production-deployment-test.result }}" == "success" ]]; then
+              echo "✅ Production deployment ran as expected"
+            else
+              echo "❌ Production deployment should have run"
+              exit 1
+            fi
+          fi
+          
+          echo "✅ Deployment isolation validated"
+
+  # Final validation report
+  validation-report:
+    name: Validation Report
+    runs-on: ubuntu-latest
+    needs: [branch-validation, quality-check, deployment-isolation-test]
+    if: always()
+    steps:
+      - name: Generate validation report
+        run: |
+          echo "======================================"
+          echo "CI/CD Pipeline Validation Report"
+          echo "======================================"
+          echo ""
+          echo "Branch: ${{ github.ref }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          echo "Job Results:"
+          echo "- Branch Validation: ${{ needs.branch-validation.result }}"
+          echo "- Quality Check: ${{ needs.quality-check.result }}"
+          echo "- Deployment Isolation: ${{ needs.deployment-isolation-test.result }}"
+          echo ""
+          
+          if [[ "${{ needs.branch-validation.result }}" == "success" ]] && \
+             [[ "${{ needs.quality-check.result }}" == "success" ]] && \
+             [[ "${{ needs.deployment-isolation-test.result }}" == "success" ]]; then
+            echo "✅ All validations passed!"
+            echo "✅ The CI/CD pipeline is working correctly"
+          else
+            echo "❌ Some validations failed"
+            echo "❌ Please review the job results above"
+            exit 1
+          fi
